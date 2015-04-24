@@ -13,7 +13,7 @@ extern "C"
 	
 	TVMStatus VMStart(int tickms, int machinetickms, int argc, char *argv[])
 	{
-		MachineInitialize(machinetickms*1000);
+		MachineInitialize(machinetickms);
 		slp_ctr = 0;
 		MachineRequestAlarm(tickms*1000, VMThreadCallback, NULL);
 		typedef void(*TVMMainEntry)(int argc, char *argv[]);
@@ -22,6 +22,8 @@ extern "C"
 		VMMain = VMLoadModule(argv[0]);
 		VMMain(argc,argv);
 		
+        
+        MachineRequestAlarm(0, NULL, NULL);
 		return VM_STATUS_SUCCESS;
 	}
 	
@@ -35,7 +37,7 @@ extern "C"
 	{
 		TVMTick term_slp = slp_ctr;
 		slp_ctr += tick;
-		while(slp_ctr > term_slp);
+        while(slp_ctr > term_slp);
 		
 	}
 	
@@ -43,15 +45,15 @@ extern "C"
 	{
 		int* status = (int*)calldata;
 		*status = result;
-		printf("status: %d\n",*status);
+//		printf("status: %d\n",*status);
 	}
 
 	TVMStatus VMFileWrite(int fd, void *data, int* length)
 	{
-		int status = -1;
+		volatile int status = 0;
 		void* dat = (void*) &status;
 		MachineFileWrite(fd, data, *length, VMFileWrite_handler, dat);
-		while(status < 0);
+        while(status == 0);
 		
 		//write(fd, data, *length);
 		return VM_STATUS_SUCCESS;
