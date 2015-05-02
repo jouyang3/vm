@@ -15,12 +15,14 @@ APPDIR=./apps
 OBJS=$(OBJDIR)/Machine.o \
      $(OBJDIR)/VirtualMachineUtils.o \
      $(OBJDIR)/VirtualMachine.o \
-     $(OBJDIR)/main.o
+     $(OBJDIR)/main.o \
+     $(OBJDIR)/tcb.o \
+     $(OBJDIR)/scheduler.o
 
 MODOBJS=$(OBJDIR)/module.o
      
      
-#DEBUG_MODE=TRUE
+DEBUG_MODE=TRUE
 UNAME := $(shell uname)
 
 ifdef DEBUG_MODE
