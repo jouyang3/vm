@@ -18,7 +18,8 @@ void popThread();
 
 void schedule()
 {
-    
+    	TMachineSignalState sigstate;
+	MachineSuspendSignals(&sigstate);
         p("[scheduler.cpp schedule()] currentThread->tid = %d\n",currentThread->tid);
 	p("[scheduler.cpp schedule()] currentThread->state = %d\n",currentThread->state);
 	if(currentThread->state == VM_THREAD_STATE_RUNNING)
