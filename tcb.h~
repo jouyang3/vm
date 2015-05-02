@@ -28,10 +28,16 @@ class TCB
 		void* stackBase;
 		SMachineContext context;
 		TVMTick slp_ctr;
+<<<<<<< HEAD
         	TVMTick nikita;
         	TVMTick quantum;
 		int fileResult;
+=======
+        TVMTick nikita;
+        TVMTick quantum;
+>>>>>>> f95ddae77ab0fa95cbd003992a6554030c322d7a
 		//Mutex Info
+		//File Result
 };
 
 #ifdef __cplusplus

@@ -3,4 +3,8 @@ make clean
 rm -f *.so
 make apps
 make all
-gdb ./vm < gdbscript
+if command -v gdb >/dev/null 2>&1; then
+	gdb ./vm < gdbscript
+else
+	lldb ./vm < lldbscript
+fi
