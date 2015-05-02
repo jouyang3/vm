@@ -1,7 +1,5 @@
 
-	#include "VirtualMachine.h"
 	#include "tcb.h"
-	
 	#include <stdint.h>
 	#include <stdlib.h>
 	
@@ -28,12 +26,8 @@
 		this->param = param;
 		this->memsize = memsize; 
 		this->stackBase = stackBase;
-		this->context = (SMachineContextRef)malloc(sizeof(SMachineContext));
-		
-	}	
-	
-	bool ComparePrio::operator()(TCB& tcb1, TCB& tcb2)
-	{
-		return tcb1.priority > tcb2.priority;
+        	this->slp_ctr = 0;
+        	this->quantum = QUANTUM_PER_THREAD;
+		this->fileResult = 0;
 	}
 

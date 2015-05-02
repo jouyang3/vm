@@ -13,8 +13,8 @@ BINDIR=.
 APPDIR=./apps
 
 OBJS=$(OBJDIR)/Machine.o \
-     $(OBJDIR)/VirtualMachineUtils.o \
      $(OBJDIR)/VirtualMachine.o \
+     $(OBJDIR)/VirtualMachineUtils.o \
      $(OBJDIR)/main.o \
      $(OBJDIR)/tcb.o \
      $(OBJDIR)/scheduler.o
@@ -52,7 +52,7 @@ APPLDFLAGS += $(DEFINES) $(INCLUDES) -shared -rdynamic -Wl,-E
 endif
 
 all: $(BINDIR)/vm 
-apps: $(BINDIR)/hello.so $(BINDIR)/sleep.so $(BINDIR)/file.so $(BINDIR)/thread.so $(BINDIR)/mutex.so 
+apps: $(APPDIR)/hello.so $(APPDIR)/sleep.so $(APPDIR)/file.so $(APPDIR)/thread.so $(APPDIR)/mutex.so 
 
 $(BINDIR)/vm: $(OBJS)
 	$(CXX) $(OBJS) $(LDFLAGS) -o $(BINDIR)/vm
@@ -62,15 +62,15 @@ FORCE: ;
 #
 # use gmake's implicit rules for now, except this one:
 #
-$(BINDIR)/%.so: $(APPDIR)/%.o
+$(APPDIR)/%.so: $(APPDIR)/%.o
 	$(CC) $(APPLDFLAGS) $< -o $@
 
-$(APPDIR)/%.o : $(APPDIR)/%.c
+$(APPDIR)/%.o : $(APPDIR)/%.o
 	$(CC) -c $(APPCFLAGS) $< -o $@
 
 $(APPDIR)/%.o : $(APPDIR)/%.cpp 
-	$(CXX) -c $(APPCFLAGS) $(CPPFLAGS) $< -o $@
-	
+	$(CC) -c $(APPCFLAGS) $(CPPFLAGS) $< -o $@
+
 $(OBJDIR)/%.o : %.c
 	$(CC) -c $(CFLAGS) $< -o $@
 
@@ -80,7 +80,10 @@ $(OBJDIR)/%.o : %.cpp
 
 	
 clean::
-	-rm $(OBJDIR)/*.o 
-	-rm $(APPDIR)/*.o    
+	-rm $(OBJDIR)/*.o
+	-rm $(APPDIR)/*.so
+	-rm $(OBJDIR)/*~
+	-rm $(OBJDIR)/test.txt
+	-rm $(OBJDIR)/vm     
 	
 .PHONY: clean

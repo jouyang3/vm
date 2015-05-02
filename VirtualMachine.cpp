@@ -1,4 +1,4 @@
-#include <vector>
+#include <map>
 #include <queue>
 #include <list>
 
@@ -11,15 +11,12 @@
 #include "VirtualMachineUtils.h"
 #include "Machine.h"
 #include "tcb.h"
-#include "scheduler.h"	
+#include "scheduler.h"
 	
 void VMThreadCallback(void*);
-volatile TVMTick slp_ctr;
-std::vector<TCB*> tb_tcb(1, (TCB*)NULL);
-std::priority_queue<TCB*> readyQueue;
-std::list<TCB*> sleepList;
-unsigned int TCB::inc_tid = 1;
+unsigned int TCB::inc_tid = 0;
 TCB* currentThread;
+bool done = false;
 	
 typedef struct{
 	TVMThreadEntry entry;
@@ -28,39 +25,77 @@ typedef struct{
 } SkelParam, *SkelParamRef;
 
 void skel(void* skelparam);
+
+extern std::map<int, TCB*> tb_tcb;
+extern std::list<TCB*> readyLow;
+extern std::list<TCB*> readyMid;
+extern std::list<TCB*> readyHigh;
+extern std::list<TCB*> sleepList;
 	
 /*
  *VMStart
  */
 
+void idle_stub(void* param){ while(1); }
+
 TVMStatus VMStart(int tickms, int machinetickms, int argc, char *argv[])
 {
-	MachineInitialize(machinetickms);
-	
-	slp_ctr = 0;
-	MachineRequestAlarm(tickms*1000, VMThreadCallback, NULL);
-	MachineEnableSignals();
-	TVMMainEntry VMMain;
-	
-	VMMain = VMLoadModule(argv[0]);
-	VMMain(argc,argv);
-		
-	TMachineSignalState sigstate;
-		
-    MachineSuspendSignals(&sigstate);
+    TVMMainEntry VMMain;
+    VMMain = VMLoadModule(argv[0]);
     
-    MachineRequestAlarm(0, NULL, NULL);
+    MachineInitialize(machinetickms);
+    MachineRequestAlarm(tickms*1000, VMThreadCallback, NULL);
+    MachineEnableSignals();
+
+    //Create IDLE thread if not exist
+    	TVMThreadID idle_tid;
+    	TCB* idle_tcb = new TCB(idle_stub, NULL, sizeof(uint8_t)*0x80000, NULL, 0, &idle_tid);
+    	idle_tcb->stackBase = malloc(sizeof(uint8_t)*0x80000);
+    	MachineContextCreate(&(idle_tcb->context), idle_stub, NULL, idle_tcb->stackBase, sizeof(uint8_t)*0x80000);
+    	idle_tcb->state = VM_THREAD_STATE_READY;
+	idle_tcb->quantum = QUANTUM_PER_THREAD;
+    	enqueue(idle_tcb);
+	tb_tcb[0] = idle_tcb;
     
-	MachineTerminate(); 
+    //Create context for main thread.
+    TVMThreadID main_tid;
+    TCB* main_tcb = new TCB(NULL, NULL, 0, NULL, VM_THREAD_PRIORITY_LOW, &main_tid);
+    main_tcb->state = VM_THREAD_STATE_RUNNING;
+    currentThread = main_tcb;
+    tb_tcb[main_tid] = main_tcb;
 	
-	return VM_STATUS_SUCCESS;
+    VMMain(argc,argv);
+    currentThread->state = VM_THREAD_STATE_DEAD;
+    //done=true;
+
+    MachineTerminate();
+	
+    return VM_STATUS_SUCCESS;
 }
 	
 void VMThreadCallback(void* dat)
 {
-	if(slp_ctr > 0){
-		slp_ctr--;
-	}
+    TMachineSignalState sigstate;
+    MachineSuspendSignals(&sigstate);
+    p("[VirtualMachine.cpp VMThreadCallback()] Quantum alarm.\n");
+    for(std::list<TCB*>::iterator it = sleepList.begin(); it != sleepList.end(); it++)
+    {
+//        p("TCB->tid: %d\n",(*it)->tid);
+        TCB* sleepThread = *it;
+        sleepThread->slp_ctr++;
+        if(sleepThread->slp_ctr >= sleepThread->nikita)
+        {
+            it = --sleepList.erase(it);
+            sleepThread->state = VM_THREAD_STATE_READY;
+            enqueue(sleepThread);
+        }
+    }
+    
+    if(currentThread->quantum > 0)
+        currentThread->quantum--;
+    
+    schedule();
+    MachineResumeSignals(&sigstate);
 }
 	
 /*
@@ -69,17 +104,22 @@ void VMThreadCallback(void* dat)
 
 TVMStatus VMThreadSleep(TVMTick tick) 
 {
+    p("[VirtualMachine.cpp VMThreadSleep()] tid: %d sleeps for %d.\n", currentThread->tid, tick);
+    currentThread->nikita = tick;
+    currentThread->state = VM_THREAD_STATE_WAITING;
 	if(tick == VM_TIMEOUT_INFINITE)
 	{
 		return VM_STATUS_ERROR_INVALID_PARAMETER;
 	} else if(tick == VM_TIMEOUT_IMMEDIATE)
 	{
 		//YIELD TO THREAD WITH EQUAL PRIORITY
+        schedule();
+        return VM_STATUS_SUCCESS;
 	}
-	
-	TVMTick term_slp = slp_ctr;
-	slp_ctr += tick;
-    while(slp_ctr > term_slp);
+    
+
+    sleepList.push_back(currentThread);
+    schedule();
 	
 	return VM_STATUS_SUCCESS;
 }
@@ -101,15 +141,9 @@ TVMStatus VMThreadCreate(TVMThreadEntry entry, void *param,
 	}
 				
 	TCB* tcb = new TCB(entry, param, memsize, NULL, prio, tid);
-
-	if(tid == NULL)
-	{
-		MachineResumeSignals(&sigstate);
-		return VM_STATUS_ERROR_INVALID_PARAMETER;
-	}
-	
-	tb_tcb.insert(tb_tcb.begin() + *tid, tcb);
-	
+    	p("[VirtualMachine.cpp VMThreadCreate()] tid: %d\n", *tid);
+	tb_tcb[*tid] = tcb;
+    
 	MachineResumeSignals(&sigstate);
 		
 	return VM_STATUS_SUCCESS;	
@@ -141,8 +175,9 @@ TVMStatus VMThreadDelete(TVMThreadID thread)
  
 TVMStatus VMThreadTerminate(TVMThreadID thread)
 {
-	TCB* tcb = tb_tcb.at(thread);
+	TCB* tcb = tb_tcb[thread];
 	tcb->state = VM_THREAD_STATE_DEAD;
+    	schedule();
 	return VM_STATUS_SUCCESS;
 }
 	
@@ -187,7 +222,7 @@ TVMStatus VMThreadActivate(TVMThreadID thread)
 	MachineSuspendSignals(&sigstate);
 	
 	TCB* tcb = tb_tcb.at(thread);
-	//p("In VMThreadActivate. ThreadID: %d", tcb->tid);
+	p("[VirtualMachine.cpp VMThreadActivate()] ThreadID: %d\n", tcb->tid);
 	if(tcb == NULL)
 	{
 		MachineResumeSignals(&sigstate);
@@ -207,11 +242,11 @@ TVMStatus VMThreadActivate(TVMThreadID thread)
 	(*skelptr).tcb = tcb;
 	(*skelptr).param = tcb->param;
 		
-	MachineContextCreate(tcb->context, skel, skelptr, tcb->stackBase, 
+	MachineContextCreate(&(tcb->context), skel, skelptr, tcb->stackBase, 
 		sizeof(uint8_t)*tcb->memsize);
 	
 	tcb->state = VM_THREAD_STATE_READY;
-	readyQueue.push(tcb);
+	enqueue(tcb);
 	
 	schedule();
 	
@@ -270,54 +305,137 @@ TVMStatus VMMutexCreate(TVMMutexID mutex)
 	
 void VMFileWrite_handler(void* calldata, int result)
 {
-	int* status = (int*)calldata;
-	*status = result;
+	TCB* t = (TCB*)calldata;
+	t->state = VM_THREAD_STATE_READY;
+	p("[VirtualMachine.cpp VMFileWrite_handler()] waiting thread: %d\n",t->tid);
+	t->fileResult = result<0?VM_STATUS_FAILURE:VM_STATUS_SUCCESS;
+	enqueue(t);
+
+	schedule();
 }
 
 TVMStatus VMFileWrite(int fd, void *data, int* length)
 {
-	volatile int status = 0;
-	void* dat = (void*) &status;
+	void* dat = (void*) currentThread;
+	currentThread->state = VM_THREAD_STATE_WAITING;
+	p("[VirtualMachine.cpp VMFileWrite()] Thread #%d attempts to write to file descriptor #%d.\n", currentThread->tid, fd);
 	MachineFileWrite(fd, data, *length, VMFileWrite_handler, dat);
-    while(status == 0);
-		
-	return VM_STATUS_SUCCESS;
+	schedule();
+	p("[VirtualMachine.cpp VMFileWrite()] Thread #%d unblocked. Returning.\n", currentThread->tid);
+	if(data == NULL || length == NULL)
+		return VM_STATUS_ERROR_INVALID_PARAMETER;
+	return currentThread->fileResult;
 }
 
 /*
  * VMFileOpen
  */
- 
-TVMStatus VMFileOpen(const char *filename, int flags, int mode, int *filedescriptor)
+
+void VMFileOpen_handler(void* calldata, int result)
 {
+	TCB* t = (TCB*)calldata;
+	t->state = VM_THREAD_STATE_READY;
+	p("[VirtualMachine.cpp VMFileOpen_handler()] waiting thread: %d\n",t->tid);
+	t->fileResult = result;
+	enqueue(t);
+
+	schedule();
+}
+ 
+TVMStatus VMFileOpen(const char *filename, int flags, int mode, int *fd)
+{
+	void* dat = (void*) currentThread;
+	currentThread->state = VM_THREAD_STATE_WAITING;
+	p("[VirtualMachine.cpp VMFileOpen()] Thread #%d attempts to open file '%s'.\n", currentThread->tid, filename);
+	MachineFileOpen(filename, flags, mode, VMFileOpen_handler, dat);
+	schedule();
+	p("[VirtualMachine.cpp VMFileOpen()] Thread #%d unblocked. Returning.\n", currentThread->tid);
+	*fd = currentThread->fileResult;
+	if(fd == NULL || filename == NULL)
+		return VM_STATUS_ERROR_INVALID_PARAMETER;
+	if(*fd < 0) return VM_STATUS_FAILURE;
 	return VM_STATUS_SUCCESS;
-} 
+}
 
 /*
  * VMFileClose
  */
- 
-TVMStatus VMFileClose(int *filedescriptor)
+
+void VMFileClose_handler(void* calldata, int result)
 {
-	return VM_STATUS_SUCCESS;
+	TCB* t = (TCB*)calldata;
+	t->state = VM_THREAD_STATE_READY;
+	p("[VirtualMachine.cpp VMFileClose_handler()] waiting thread: %d\n",t->tid);
+	t->fileResult = result<0?VM_STATUS_FAILURE:VM_STATUS_SUCCESS;
+	enqueue(t);
+
+	schedule();
+}
+ 
+TVMStatus VMFileClose(int fd)
+{
+	void* dat = (void*) currentThread;
+	currentThread->state = VM_THREAD_STATE_WAITING;
+	p("[VirtualMachine.cpp VMFileClose()] Thread #%d attempts to close file descriptor #%d.\n", currentThread->tid, fd);
+	MachineFileClose(fd, VMFileClose_handler, dat);
+	schedule();
+	p("[VirtualMachine.cpp VMFileClose()] Thread #%d unblocked. Returning.\n", currentThread->tid);
+	return currentThread->fileResult;
 } 
 
 /*
  * VMFileRead
  */
- 
-TVMStatus VMFileRead(int filedescriptor, void *data, int *length)
+
+void VMFileRead_handler(void* calldata, int result)
 {
-	return VM_STATUS_SUCCESS;
+	TCB* t = (TCB*)calldata;
+	t->state = VM_THREAD_STATE_READY;
+	p("[VirtualMachine.cpp VMFileRead_handler()] waiting thread: %d\n",t->tid);
+	t->fileResult = result<0?VM_STATUS_FAILURE:VM_STATUS_SUCCESS;
+	enqueue(t);
+
+	schedule();
+}
+ 
+TVMStatus VMFileRead(int fd, void *data, int *length)
+{
+	void* dat = (void*) currentThread;
+	currentThread->state = VM_THREAD_STATE_WAITING;
+	p("[VirtualMachine.cpp VMFileRead()] Thread #%d attempts to read file descriptor #%d.\n", currentThread->tid, fd);
+	MachineFileRead(fd, data, *length, VMFileRead_handler, dat);
+	schedule();
+	p("[VirtualMachine.cpp VMFileRead()] Thread #%d unblocked. Returning.\n", currentThread->tid);
+	if(data == NULL || length == NULL)
+		return VM_STATUS_ERROR_INVALID_PARAMETER;
+	return currentThread->fileResult;
 } 
 
 /*
  * VMFileSeek
  */
- 
-TVMStatus VMFileSeek(int filedescriptor, int offset, int whence, int *newoffset)
+
+void VMFileSeek_handler(void* calldata, int result)
 {
-	return VM_STATUS_SUCCESS;
+	TCB* t = (TCB*)calldata;
+	t->state = VM_THREAD_STATE_READY;
+	p("[VirtualMachine.cpp VMFileSeek_handler()] waiting thread: %d\n",t->tid);
+	t->fileResult = result;
+	enqueue(t);
+
+	schedule();
+}
+
+TVMStatus VMFileSeek(int fd, int offset, int whence, int *newoffset)
+{
+	void* dat = (void*) currentThread;
+	currentThread->state = VM_THREAD_STATE_WAITING;
+	p("[VirtualMachine.cpp VMFileSeek()] Thread #%d attempts to seek in file descriptor #%d.\n", currentThread->tid, fd);
+	MachineFileSeek(fd, offset, whence, VMFileSeek_handler, dat);
+	schedule();
+	p("[VirtualMachine.cpp VMFileSeek()] Thread #%d unblocked. Returning.\n", currentThread->tid);
+	*newoffset = currentThread->fileResult;
+	return (*newoffset < 0)?VM_STATUS_FAILURE:VM_STATUS_SUCCESS;
 } 
 
 void skel(void* skelparam)

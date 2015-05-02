@@ -7,7 +7,8 @@ extern "C" {
 
 #include "Machine.h"
 #include "VirtualMachine.h"
-#include "VirtualMachineUtils.h"
+
+#define QUANTUM_PER_THREAD ((TVMTick) 20)
 
 class TCB
 {
@@ -23,16 +24,13 @@ class TCB
 		void *param;
 		TVMMemorySize memsize;
 		void* stackBase;
-		SMachineContextRef context;
+		SMachineContext context;
 		TVMTick slp_ctr;
+        	TVMTick nikita;
+        	TVMTick quantum;
+		int fileResult;
 		//Mutex Info
 		//File Result
-};
-
-class ComparePrio
-{
-	public:
-		bool operator()(TCB& tcb1, TCB& tcb2);
 };
 
 #ifdef __cplusplus
