@@ -29,7 +29,7 @@
 		this->memsize = memsize; 
 		this->stackBase = stackBase;
         this->slp_ctr = 0;
-        this->quantum = QUANTUM_PER_THREAD;;
+        this->quantum = 0;
 		this->context = (SMachineContextRef)malloc(sizeof(SMachineContext));
 		
 	}	

@@ -9,8 +9,6 @@ extern "C" {
 #include "VirtualMachine.h"
 #include "VirtualMachineUtils.h"
 
-#define QUANTUM_PER_THREAD ((TVMTick) 20)
-
 class TCB
 {
 	public:

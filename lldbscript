@@ -1,0 +1,5 @@
+settings set target.run-args ./sleep.so
+run
+process handle -p true -s false -n true SIGUSR1 SIGUSR2
+process handle -p true -s true -n true SIGSEGV
+run
