@@ -30,8 +30,8 @@ void VMMain(int argc, char *argv[]){
     }
     VMPrint("VMMain activating thread.\n");
     VMThreadActivate(VMThreadID);
-    VMPrint("VMMain going to sleep\n");
-    VMThreadSleep(10);
+    VMPrint("VMMain going to sleep for 50\n");
+    VMThreadSleep(50);
     VMPrint("VMMain Awake\nGoodbye\n");
     
 }

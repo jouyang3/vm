@@ -13,15 +13,15 @@ BINDIR=.
 APPDIR=./apps
 
 OBJS=$(OBJDIR)/Machine.o \
-     $(OBJDIR)/VirtualMachine.o \
-     $(OBJDIR)/VirtualMachineUtils.o \
-     $(OBJDIR)/main.o \
-     $(OBJDIR)/tcb.o \
-     $(OBJDIR)/scheduler.o
+$(OBJDIR)/VirtualMachine.o \
+$(OBJDIR)/VirtualMachineUtils.o \
+$(OBJDIR)/main.o \
+$(OBJDIR)/tcb.o \
+$(OBJDIR)/scheduler.o
 
 MODOBJS=$(OBJDIR)/module.o
-     
-     
+
+
 DEBUG_MODE=TRUE
 UNAME := $(shell uname)
 
@@ -29,34 +29,34 @@ ifdef DEBUG_MODE
 DEFINES += -DDEBUG
 endif
 
-INCLUDES += -I. 
+INCLUDES += -I.
 LIBRARIES = -ldl
 
 CFLAGS += -Wall $(INCLUDES) $(DEFINES)
 APPCFLAGS += -Wall -fPIC $(INCLUDES) $(DEFINES)
 
 ifdef DEBUG_MODE
-CFLAGS += -g -ggdb
-APPCFLAGS += -g -ggdb
+	CFLAGS += -g -ggdb
+	APPCFLAGS += -g -ggdb
 else
-CFLAGS += -O3
-APPCFLAGS += -O3
+	CFLAGS += -O3
+	APPCFLAGS += -O3
 endif
 
 ifeq ($(UNAME), Darwin)
-LDFLAGS = $(DEFINES) $(INCLUDES) $(LIBRARIES) 
-APPLDFLAGS += $(DEFINES) $(INCLUDES) -shared -rdynamic -flat_namespace -undefined suppress
+	LDFLAGS = $(DEFINES) $(INCLUDES) $(LIBRARIES)
+	APPLDFLAGS += $(DEFINES) $(INCLUDES) -shared -rdynamic -flat_namespace -undefined suppress
 else
-LDFLAGS = $(DEFINES) $(INCLUDES) $(LIBRARIES) -Wl,-E
-APPLDFLAGS += $(DEFINES) $(INCLUDES) -shared -rdynamic -Wl,-E
+	LDFLAGS = $(DEFINES) $(INCLUDES) $(LIBRARIES) -Wl,-E
+	APPLDFLAGS += $(DEFINES) $(INCLUDES) -shared -rdynamic -Wl,-E
 endif
 
-all: $(BINDIR)/vm 
-apps: $(APPDIR)/hello.so $(APPDIR)/sleep.so $(APPDIR)/file.so $(APPDIR)/thread.so $(APPDIR)/mutex.so 
+all: $(BINDIR)/vm
+apps: $(APPDIR)/hello.so $(APPDIR)/sleep.so $(APPDIR)/file.so $(APPDIR)/thread.so $(APPDIR)/mutex.so
 
 $(BINDIR)/vm: $(OBJS)
 	$(CXX) $(OBJS) $(LDFLAGS) -o $(BINDIR)/vm
-	
+
 FORCE: ;
 
 #
@@ -68,22 +68,22 @@ $(APPDIR)/%.so: $(APPDIR)/%.o
 $(APPDIR)/%.o : $(APPDIR)/%.o
 	$(CC) -c $(APPCFLAGS) $< -o $@
 
-$(APPDIR)/%.o : $(APPDIR)/%.cpp 
+$(APPDIR)/%.o : $(APPDIR)/%.cpp
 	$(CC) -c $(APPCFLAGS) $(CPPFLAGS) $< -o $@
 
 $(OBJDIR)/%.o : %.c
 	$(CC) -c $(CFLAGS) $< -o $@
 
-$(OBJDIR)/%.o : %.cpp 
+$(OBJDIR)/%.o : %.cpp
 	$(CXX) -c $(CFLAGS) $(CPPFLAGS) $< -o $@
 
 
-	
+
 clean::
 	-rm $(OBJDIR)/*.o
 	-rm $(APPDIR)/*.so
 	-rm $(OBJDIR)/*~
 	-rm $(OBJDIR)/test.txt
-	-rm $(OBJDIR)/vm     
-	
+	-rm $(OBJDIR)/vm
+
 .PHONY: clean

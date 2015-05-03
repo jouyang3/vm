@@ -4,13 +4,13 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
-
+    
 #include "VirtualMachine.h"
 #include "VirtualMachineUtils.h"
 #include "tcb.h"
-
-void schedule(void);
-
+    
+    void schedule(void);
+    
 #ifdef __cplusplus
 }
 #endif

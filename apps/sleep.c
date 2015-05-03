@@ -2,7 +2,7 @@
 
 void VMMain(int argc, char *argv[]){
     VMPrint("Going to sleep for 10 ticks\n");
-    VMThreadSleep(10);
+    VMThreadSleep(50);
     VMPrint("Awake\nGoodbye\n");
 }
 
