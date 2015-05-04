@@ -4,8 +4,9 @@
 #include <list>
 #include <map>
 
-std::map<int, TCB*> tb_tcb;
 std::map<int, Mutex*> tb_mutex;
+std::map<int, TCB*> tb_tcb;
+TCB* idleThread;
 std::list<TCB*> readyLow;
 std::list<TCB*> readyNormal;
 std::list<TCB*> readyHigh;
@@ -13,12 +14,10 @@ std::list<TCB*> sleepList;
 
 void enqueue(TCB* tcb)
 {
-	//I don't think we want to enqueue the idle thread, especially in low priority list.
     if(tcb->priority == 0){
-        readyLow.push_back(tcb);
+        idleThread = tcb;
         return;
     }
-    
     switch(tcb->priority)
     {
         case VM_THREAD_PRIORITY_LOW:
@@ -45,6 +44,10 @@ TCB* peek()
     {
         front = readyLow.front();
     }
+    else
+    {
+        front = idleThread;
+    }
     return front;
 }
 
@@ -54,12 +57,17 @@ TCB* peekPrior(TVMThreadPriority p)
     switch(p)
     {
         case 0:
+        {
+            front = idleThread;
+            break;
+        }
         case VM_THREAD_PRIORITY_LOW:
         {
             if(!readyLow.empty())
             {
                 front = readyLow.front();
             }
+            break;
         }
         case VM_THREAD_PRIORITY_NORMAL:
         {
@@ -67,6 +75,7 @@ TCB* peekPrior(TVMThreadPriority p)
             {
                 front = readyNormal.front();
             }
+            break;
         }
         case VM_THREAD_PRIORITY_HIGH:
         {
@@ -74,6 +83,7 @@ TCB* peekPrior(TVMThreadPriority p)
             {
                 front = readyHigh.front();
             }
+            break;
         }
     }
     return front;
@@ -96,6 +106,53 @@ TCB* dequeue()
     {
         front = readyLow.front();
         readyLow.pop_front();
+    }
+    else
+    {
+        front = idleThread;
+        idleThread = NULL;
+    }
+    return front;
+}
+
+TCB* dequeuePrior(TVMThreadPriority p)
+{
+    TCB* front = NULL;
+    switch(p)
+    {
+        case 0:
+        {
+            front = idleThread;
+            idleThread = NULL;
+            break;
+        }
+        case VM_THREAD_PRIORITY_LOW:
+        {
+            if(!readyLow.empty())
+            {
+                front = readyLow.front();
+                readyLow.pop_front();
+            }
+            break;
+        }
+        case VM_THREAD_PRIORITY_NORMAL:
+        {
+            if(!readyNormal.empty())
+            {
+                front = readyNormal.front();
+                readyNormal.pop_front();
+            }
+            break;
+        }
+        case VM_THREAD_PRIORITY_HIGH:
+        {
+            if(!readyHigh.empty())
+            {
+                front = readyHigh.front();
+                readyHigh.pop_front();
+            }
+            break;
+        }
     }
     return front;
 }
