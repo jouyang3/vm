@@ -20,7 +20,6 @@ class Mutex
         
         static unsigned int inc_mid;
 		TVMMutexID mid;
-		TVMMutexIDRef midRef;
 		mutexState state;
 		TCB* owner;
 		std::list<TCB*> waitingLow;

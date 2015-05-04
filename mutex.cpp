@@ -1,5 +1,5 @@
 #include "mutex.h"
-
+#include "utils.h"
 //TVMMutexID mid;
 //TVMMutexIDRef midRef;
 //mutexState state;
@@ -10,7 +10,7 @@
 
 Mutex::Mutex()
 {
+	p("[mutex.cpp Mutex::Mutex()]Attempt to create mutex with mid: %d\n", inc_mid);
 	this->mid = inc_mid++;
-	this->midRef = &(this->mid);
 	this->state = UNLOCKED;	
 }

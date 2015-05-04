@@ -94,8 +94,8 @@ TCB* dequeue()
     TCB* front = NULL;
     if(!readyHigh.empty())
     {
-        front = readyLow.front();
-        readyLow.pop_front();
+        front = readyHigh.front();
+        readyHigh.pop_front();
     }
     else if(!readyNormal.empty())
     {
@@ -237,6 +237,7 @@ TCB* mdequeuePrior(TVMThreadPriority p, Mutex* m)
 
 void mutexWaiterIncrement(Mutex* mutex)
 {
+	//p("In MutexWaiterIncrement Function\n");
 	for(std::list<TCB*>::iterator it = (mutex->waitingHigh).begin(); it != (mutex->waitingHigh).end(); it++)
 	{
 		TCB* tcb = *it;
