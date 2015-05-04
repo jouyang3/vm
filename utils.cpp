@@ -157,40 +157,6 @@ TCB* dequeuePrior(TVMThreadPriority p)
     return front;
 }
 
-TCB* dequeuePrior(TVMThreadPriority p)
-{
-    TCB* front = NULL;
-    switch(p)
-    {
-        case 0:
-        case VM_THREAD_PRIORITY_LOW:
-        {
-            if(!readyLow.empty())
-            {
-                front = readyLow.front();
-                readyLow.pop_front();
-            }
-        }
-        case VM_THREAD_PRIORITY_NORMAL:
-        {
-            if(!readyNormal.empty())
-            {
-                front = readyNormal.front();
-                readyNormal.pop_front();
-            }
-        }
-        case VM_THREAD_PRIORITY_HIGH:
-        {
-            if(!readyHigh.empty())
-            {
-                front = readyHigh.front();
-                readyHigh.pop_front();
-            }
-        }
-    }
-    return front;
-}
-
 void menqueue(TCB* tcb, Mutex* m)
 {
 	switch(tcb->priority)
