@@ -4,9 +4,10 @@
 #include "scheduler.h"
 #include "tcb.h"
 #include "Machine.h"
+#include "utils.h"
 #include <list>
 #include <queue>
-#include <stdlib.h>
+#include <cstdlib>
 
 extern TCB* currentThread;
 extern std::list<TCB*> readyLow;
@@ -47,6 +48,7 @@ void schedule()
             oldThread->state = VM_THREAD_STATE_READY;
             enqueue(oldThread);
             
+            
             TCB* yieldingThread = peekPrior(oldThread->priority);
             if(yieldingThread!=NULL)
             {
@@ -54,7 +56,7 @@ void schedule()
                 oldThread->quantum = QUANTUM_PER_THREAD;
                 MachineResumeSignals(&sigstate);
             }
-            else //No threads to yield
+            else //No threads to yield to
             {
                 MachineResumeSignals(&sigstate);
                 oldThread->quantum = QUANTUM_PER_THREAD;
@@ -77,9 +79,14 @@ void popThread()
     TCB* oldThread = currentThread;
     p("[scheduler.cpp popThread()] oldThread = #%d\n",oldThread->tid);
     currentThread = dequeue();
-    if(currentThread->nikita == 0)
+    if(currentThread != NULL)
+    {
         currentThread->state = VM_THREAD_STATE_RUNNING;
-    p("[scheduler.cpp popThread()] tid: %d -> tid: %d\n", oldThread->tid, currentThread->tid);
-    MachineContextSwitch(&(oldThread->context), &(currentThread->context));
+		p("[scheduler.cpp popThread()] tid: %d -> tid: %d\n", oldThread->tid, currentThread->tid);
+		MachineContextSwitch(&(oldThread->context), &(currentThread->context));
+	} else 
+	{
+		currentThread = oldThread;
+	}
 }
 

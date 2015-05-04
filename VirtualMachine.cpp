@@ -2,19 +2,20 @@
 #include <queue>
 #include <list>
 
-#include <unistd.h>
-#include <stdio.h>
 #include <stdint.h>
-#include <stdlib.h>
+#include <cstdlib>
 
 #include "VirtualMachine.h"
 #include "VirtualMachineUtils.h"
 #include "Machine.h"
 #include "tcb.h"
 #include "scheduler.h"
+#include "mutex.h"
+#include "utils.h"
 
 void VMThreadCallback(void*);
 
+unsigned int Mutex::inc_mid = 0;
 unsigned int TCB::inc_tid = 0;
 TCB* currentThread;
 
@@ -27,8 +28,9 @@ typedef struct{
 void skel(void* skelparam);
 
 extern std::map<int, TCB*> tb_tcb;
+extern std::map<int, Mutex*> tb_mutex;
 extern std::list<TCB*> readyLow;
-extern std::list<TCB*> readyMid;
+extern std::list<TCB*> readyNormal;
 extern std::list<TCB*> readyHigh;
 extern std::list<TCB*> sleepList;
 
@@ -49,13 +51,14 @@ TVMStatus VMStart(int tickms, int machinetickms, int argc, char *argv[])
     
     //Create IDLE thread if not exist
     TVMThreadID idle_tid;
-    TCB* idle_tcb = new TCB(idle_stub, NULL, sizeof(uint8_t)*0x80000, NULL, 0, &idle_tid);
-    idle_tcb->stackBase = malloc(sizeof(uint8_t)*0x80000);
-    MachineContextCreate(&(idle_tcb->context), idle_stub, NULL, idle_tcb->stackBase, sizeof(uint8_t)*0x80000);
+    TCB* idle_tcb = new TCB(idle_stub, NULL, sizeof(uint8_t)*0x100000, NULL, 0, &idle_tid);
+    idle_tcb->stackBase = malloc(sizeof(uint8_t)*0x100000);
+    MachineContextCreate(&(idle_tcb->context), idle_stub, NULL, idle_tcb->stackBase, sizeof(uint8_t)*0x100000);
     idle_tcb->state = VM_THREAD_STATE_READY;
     idle_tcb->quantum = QUANTUM_PER_THREAD;
     enqueue(idle_tcb);
     tb_tcb[0] = idle_tcb;
+    
     
     //Create context for main thread.
     TVMThreadID main_tid;
@@ -81,14 +84,60 @@ void VMThreadCallback(void* dat)
     {
         TCB* sleepThread = *it;
         sleepThread->slp_ctr++;
+        
         if(sleepThread->slp_ctr >= sleepThread->nikita)
         {
             it = --sleepList.erase(it);
             sleepThread->state = VM_THREAD_STATE_READY;
             enqueue(sleepThread);
         }
+        
     }
     
+    //JUST ADDED FOR MUTEXACQUIRE()
+    //
+    
+    
+    for(std::map<int, Mutex*>::iterator it = tb_mutex.begin(); it != tb_mutex.end(); it++)
+    {
+		Mutex* currentMutex = it->second;
+		TCB* tcb;
+		
+		mutexWaiterIncrement(currentMutex);     //In VirtualMachineUtils.cpp
+		
+		if(currentMutex->state == UNLOCKED)
+		{
+			if(!(currentMutex->waitingHigh.empty()))
+			{
+				tcb = mdequeuePrior(VM_THREAD_PRIORITY_HIGH, currentMutex);
+				currentMutex->state = LOCKED;
+				currentMutex->owner = tcb;
+				tcb->heldMutexes.push_back(currentMutex);
+				tcb->waitingOnMutex = currentMutex;
+				tcb->state = VM_THREAD_STATE_READY;
+				enqueue(tcb);
+			} else if(!(currentMutex->waitingNormal.empty()))
+			{
+				tcb = mdequeuePrior(VM_THREAD_PRIORITY_NORMAL, currentMutex);
+				currentMutex->state = LOCKED;
+				currentMutex->owner = tcb;
+				tcb->heldMutexes.push_back(currentMutex);
+				tcb->waitingOnMutex = currentMutex;
+				tcb->state = VM_THREAD_STATE_READY;
+				enqueue(tcb);
+			} else if(!(currentMutex->waitingLow.empty()))
+			{
+				tcb = mdequeuePrior(VM_THREAD_PRIORITY_LOW, currentMutex);
+				currentMutex->state = LOCKED;
+				currentMutex->owner = tcb;
+				tcb->heldMutexes.push_back(currentMutex);
+				tcb->waitingOnMutex = currentMutex;
+				tcb->state = VM_THREAD_STATE_READY;
+				enqueue(tcb);
+			}
+		}
+	}
+	
     if(currentThread->quantum > 0)
         currentThread->quantum--;
     
@@ -160,6 +209,8 @@ TVMStatus VMThreadDelete(TVMThreadID thread)
     if(tb_tcb.at(thread)->state == VM_THREAD_STATE_DEAD)
     {
         //Delete dead thread
+        tb_tcb.erase(thread);
+        
         return VM_STATUS_SUCCESS;
     } else
     {
@@ -187,6 +238,11 @@ TVMStatus VMThreadID(TVMThreadIDRef threadref)
 {
     //puts the thread identifier of the currently running thread in the location
     //specified by threadref
+    if(threadref == NULL)
+	{
+		return VM_STATUS_ERROR_INVALID_PARAMETER;
+	}
+	(*threadref) = currentThread->tid;
     
     return VM_STATUS_SUCCESS;
 }
@@ -202,10 +258,14 @@ TVMStatus VMThreadState(TVMThreadID thread, TVMThreadStateRef state)
     {
         return VM_STATUS_ERROR_INVALID_ID;
     }
-    if(tcb->state != VM_THREAD_STATE_DEAD)
-    {
-        return VM_STATUS_ERROR_INVALID_STATE;
-    }
+    
+    //!Commented out condition below because... why?//
+	/*
+	if(tcb->state != VM_THREAD_STATE_DEAD)
+	{
+		return VM_STATUS_ERROR_INVALID_STATE;
+	}
+	*/
     *state = tcb->state;
     return VM_STATUS_SUCCESS;
 }
@@ -258,6 +318,20 @@ TVMStatus VMThreadActivate(TVMThreadID thread)
 
 TVMStatus VMMutexCreate(TVMMutexIDRef mutexref)
 {
+	TMachineSignalState sigstate;
+    MachineSuspendSignals(&sigstate);
+	
+	if(mutexref == NULL)
+	{
+		MachineResumeSignals(&sigstate);
+		return VM_STATUS_ERROR_INVALID_PARAMETER;
+	}
+	
+	Mutex* mutex = new Mutex();
+	tb_mutex[mutex->mid] = mutex;
+	mutexref = mutex->midRef;
+		
+	MachineResumeSignals(&sigstate);
     return VM_STATUS_SUCCESS;
 }
 
@@ -267,7 +341,18 @@ TVMStatus VMMutexCreate(TVMMutexIDRef mutexref)
 
 TVMStatus VMMutexDelete(TVMMutexID mutex)
 {
-    return VM_STATUS_SUCCESS;
+	Mutex* currentMutex = tb_mutex[mutex];
+	if(currentMutex == NULL)
+	{
+		return VM_STATUS_ERROR_INVALID_ID;
+	} else if(currentMutex->state == LOCKED)
+	{
+		return VM_STATUS_ERROR_INVALID_STATE;
+	} else
+	{
+		tb_tcb.erase(currentMutex->mid);
+		return VM_STATUS_SUCCESS;
+	}
 }
 
 /*
@@ -276,15 +361,58 @@ TVMStatus VMMutexDelete(TVMMutexID mutex)
 
 TVMStatus VMMutexQuery(TVMMutexID mutex, TVMThreadIDRef ownerref)
 {
-    return VM_STATUS_SUCCESS;
+	if(ownerref == NULL)
+	{
+		return VM_STATUS_ERROR_INVALID_PARAMETER;
+	}
+	Mutex* currentMutex = tb_mutex[mutex];
+	if(currentMutex == NULL)
+	{
+		return VM_STATUS_ERROR_INVALID_ID;
+	} else if (currentMutex->state == UNLOCKED)
+	{
+		return VM_THREAD_ID_INVALID;
+	} else 
+	{
+		ownerref = &((currentMutex->owner)->tid);
+		return VM_STATUS_SUCCESS;	
+	}
+	
 }
 
 /*
  *VMMutexAcquire
  */
 
-TVMStatus VMMutexCreate(TVMMutexID mutex, TVMTick timeout)
+TVMStatus VMMutexAcquire(TVMMutexID mutex, TVMTick timeout)
 {
+	TMachineSignalState sigstate;
+    MachineSuspendSignals(&sigstate);
+	
+	Mutex* currentMutex = tb_mutex[mutex];
+	if(currentMutex == NULL)
+	{
+		MachineResumeSignals(&sigstate);
+		return VM_STATUS_ERROR_INVALID_ID;
+	} else if(currentMutex->state == UNLOCKED)
+	{
+		currentMutex->state = LOCKED;
+		currentMutex->owner = currentThread;
+		(currentThread->heldMutexes).push_back(currentMutex);
+	} else if(timeout == VM_TIMEOUT_IMMEDIATE)
+	{
+		MachineResumeSignals(&sigstate);
+		return VM_STATUS_FAILURE;
+	} else
+	{
+		currentThread->waitingOnMutex = currentMutex;
+		currentThread->state = VM_THREAD_STATE_WAITING;
+		currentThread->nikita = timeout;
+		menqueue(currentThread, currentMutex);
+		schedule();
+	}
+	
+	MachineResumeSignals(&sigstate);
     return VM_STATUS_SUCCESS;
 }
 
@@ -292,9 +420,30 @@ TVMStatus VMMutexCreate(TVMMutexID mutex, TVMTick timeout)
  *VMMutexRelease
  */
 
-TVMStatus VMMutexCreate(TVMMutexID mutex)
+TVMStatus VMMutexRelease(TVMMutexID mutex)
 {
-    return VM_STATUS_SUCCESS;
+	Mutex* currentMutex = tb_mutex[mutex];
+	if(currentMutex == NULL)
+	{
+		return VM_STATUS_ERROR_INVALID_ID;
+	}
+	
+	bool found = false;
+	std::list<Mutex*>::iterator it = (currentThread->heldMutexes).begin();
+	
+	while(it != (currentThread->heldMutexes).end() && !found)
+	{
+		if(currentMutex == *it)
+		{
+			found = true;
+			currentMutex->state = UNLOCKED;
+			it = --(currentThread->heldMutexes).erase(it);
+			return VM_STATUS_SUCCESS;
+		}
+		it++;
+	}
+	
+	return VM_STATUS_ERROR_INVALID_STATE;
 }
 
 /*

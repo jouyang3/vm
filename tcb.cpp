@@ -1,7 +1,8 @@
 
 #include "tcb.h"
 #include <stdint.h>
-#include <stdlib.h>
+#include <cstdlib>
+#include <list>
 
 //TVMThreadID tid;
 //TVMThreadState state;
@@ -29,5 +30,6 @@ TCB::TCB(TVMThreadEntry entry, void *param, TVMMemorySize memsize,
     this->slp_ctr = 0;
     this->quantum = QUANTUM_PER_THREAD;
     this->fileResult = 0;
+	
 }
 

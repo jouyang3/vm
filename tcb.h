@@ -1,19 +1,23 @@
 #ifndef TCB_H
 #define TCB_H
 
+#include <list>
+#include "Machine.h"
+#include "VirtualMachine.h"
+#include "mutex.h"
+    
 #ifdef __cplusplus
 extern "C" {
 #endif
-    
-#include "Machine.h"
-#include "VirtualMachine.h"
-    
+
 #define QUANTUM_PER_THREAD ((TVMTick) 20)
     
 #define QUANTUM_PER_THREAD ((TVMTick) 20)
-    
-    class TCB
-    {
+
+class Mutex;
+
+class TCB
+{
     public:
         TCB(TVMThreadEntry, void*, TVMMemorySize, void*, TVMThreadPriority,
             TVMThreadIDRef);
@@ -31,11 +35,14 @@ extern "C" {
         TVMTick nikita;
         TVMTick quantum;
         int fileResult;
-        //Mutex Info
-    };
+        std::list<Mutex*> heldMutexes;
+        Mutex* waitingOnMutex;
+};
     
+
 #ifdef __cplusplus
 }
 #endif
+
 
 #endif
